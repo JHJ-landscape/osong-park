@@ -1,0 +1,803 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>조경 GIS 분석 시스템</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Pretendard:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/@turf/turf@6/turf.min.js"></script>
+<style>
+:root {
+  --bg: #0d1117;
+  --bg2: #161b22;
+  --bg3: #21262d;
+  --border: #30363d;
+  --accent: #58a6ff;
+  --accent2: #3fb950;
+  --warn: #f78166;
+  --gold: #e3b341;
+  --text: #e6edf3;
+  --text2: #8b949e;
+  --text3: #6e7681;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:'Pretendard',sans-serif; background:var(--bg); color:var(--text); height:100vh; display:flex; flex-direction:column; overflow:hidden; }
+
+/* 헤더 */
+#header {
+  background:var(--bg2);
+  border-bottom:1px solid var(--border);
+  padding:0 20px;
+  height:52px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  flex-shrink:0;
+}
+#header .logo {
+  display:flex;
+  align-items:center;
+  gap:10px;
+}
+#header .logo-icon {
+  width:28px; height:28px;
+  background:linear-gradient(135deg,#1f6feb,#58a6ff);
+  border-radius:6px;
+  display:flex; align-items:center; justify-content:center;
+  font-size:14px;
+}
+#header h1 { font-size:15px; font-weight:600; color:var(--text); }
+#header .subtitle { font-size:11px; color:var(--text2); margin-top:1px; }
+.status-dot {
+  width:8px; height:8px;
+  background:var(--accent2);
+  border-radius:50%;
+  box-shadow:0 0 6px var(--accent2);
+  animation:pulse 2s infinite;
+}
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+/* 메인 레이아웃 */
+#main { display:flex; flex:1; overflow:hidden; }
+#map { flex:1; }
+
+/* 사이드패널 */
+#panel {
+  width:340px;
+  background:var(--bg2);
+  border-left:1px solid var(--border);
+  display:flex;
+  flex-direction:column;
+  overflow:hidden;
+}
+
+/* 탭 */
+.tabs {
+  display:flex;
+  border-bottom:1px solid var(--border);
+  background:var(--bg);
+  flex-shrink:0;
+}
+.tab {
+  flex:1; padding:10px 0;
+  font-size:11px; font-weight:500;
+  color:var(--text2);
+  cursor:pointer;
+  border-bottom:2px solid transparent;
+  text-align:center;
+  transition:all 0.15s;
+  letter-spacing:0.3px;
+}
+.tab:hover { color:var(--text); background:var(--bg2); }
+.tab.active { color:var(--accent); border-bottom-color:var(--accent); background:var(--bg2); }
+
+.tab-content { display:none; flex:1; overflow-y:auto; padding:16px; }
+.tab-content.active { display:block; }
+
+/* 카드 */
+.card {
+  background:var(--bg3);
+  border:1px solid var(--border);
+  border-radius:8px;
+  padding:14px;
+  margin-bottom:10px;
+}
+.card-label {
+  font-size:10px;
+  color:var(--text3);
+  text-transform:uppercase;
+  letter-spacing:1px;
+  margin-bottom:6px;
+  font-weight:500;
+}
+.card-value {
+  font-size:22px;
+  font-weight:700;
+  color:var(--text);
+  line-height:1;
+}
+.card-unit { font-size:12px; color:var(--text2); margin-left:4px; font-weight:400; }
+.card-sub { font-size:12px; color:var(--accent2); margin-top:5px; }
+.card-desc { font-size:13px; color:var(--text2); line-height:1.7; }
+
+/* 섹션 타이틀 */
+.sec-title {
+  font-size:10px;
+  color:var(--text3);
+  text-transform:uppercase;
+  letter-spacing:1px;
+  margin:14px 0 8px;
+  font-weight:600;
+  display:flex;
+  align-items:center;
+  gap:6px;
+}
+.sec-title::after {
+  content:'';
+  flex:1;
+  height:1px;
+  background:var(--border);
+}
+
+/* 버튼들 */
+.layer-btn {
+  display:flex;
+  align-items:center;
+  gap:8px;
+  width:100%;
+  padding:9px 12px;
+  margin-bottom:5px;
+  border:1px solid var(--border);
+  border-radius:6px;
+  background:var(--bg3);
+  color:var(--text2);
+  cursor:pointer;
+  font-size:12px;
+  font-family:'Pretendard',sans-serif;
+  transition:all 0.15s;
+}
+.layer-btn:hover { border-color:var(--accent); color:var(--text); background:#1c2128; }
+.layer-btn.active { border-color:var(--accent); color:var(--accent); background:#1c2128; }
+.layer-btn .dot {
+  width:8px; height:8px;
+  border-radius:50%;
+  background:var(--border);
+  flex-shrink:0;
+}
+.layer-btn.active .dot { background:var(--accent); box-shadow:0 0 4px var(--accent); }
+
+.analysis-btn {
+  display:flex;
+  align-items:center;
+  gap:10px;
+  width:100%;
+  padding:11px 14px;
+  margin-bottom:6px;
+  border:1px solid var(--border);
+  border-radius:8px;
+  background:var(--bg3);
+  color:var(--text);
+  cursor:pointer;
+  font-size:13px;
+  font-weight:500;
+  font-family:'Pretendard',sans-serif;
+  transition:all 0.2s;
+  text-align:left;
+}
+.analysis-btn:hover { border-color:var(--accent2); background:#1c2128; }
+.analysis-btn .btn-icon { font-size:16px; flex-shrink:0; }
+.analysis-btn .btn-text { flex:1; }
+.analysis-btn .btn-badge {
+  font-size:10px;
+  padding:2px 7px;
+  border-radius:10px;
+  background:var(--bg);
+  color:var(--text3);
+  border:1px solid var(--border);
+}
+.analysis-btn.done { border-color:var(--accent2); }
+.analysis-btn.done .btn-badge { background:#1a3a2a; color:var(--accent2); border-color:var(--accent2); }
+.analysis-btn.loading { opacity:0.7; cursor:wait; }
+
+/* 분석 결과 */
+.result-box {
+  background:var(--bg);
+  border:1px solid var(--border);
+  border-radius:6px;
+  padding:12px;
+  margin-top:8px;
+  font-size:12px;
+}
+.result-box table {
+  width:100%;
+  border-collapse:collapse;
+  font-size:11px;
+}
+.result-box th {
+  background:var(--bg2);
+  color:var(--accent);
+  padding:6px 4px;
+  text-align:center;
+  border:1px solid var(--border);
+  white-space:nowrap;
+  font-weight:500;
+}
+.result-box td {
+  padding:5px 4px;
+  text-align:center;
+  border:1px solid var(--border);
+  color:var(--text2);
+}
+.result-box tr:hover td { background:var(--bg2); color:var(--text); }
+.total-row td { color:var(--gold) !important; font-weight:600; background:var(--bg2) !important; }
+
+/* 로딩 */
+.spinner {
+  border:2px solid var(--border);
+  border-top:2px solid var(--accent);
+  border-radius:50%;
+  width:20px; height:20px;
+  animation:spin 0.8s linear infinite;
+  margin:0 auto 8px;
+}
+@keyframes spin { to { transform:rotate(360deg); } }
+.loading-msg { text-align:center; color:var(--text2); font-size:12px; padding:16px 0; }
+
+/* 좌표 박스 */
+.coord-box {
+  background:var(--bg);
+  border:1px solid var(--border);
+  border-radius:6px;
+  padding:10px 12px;
+  font-size:11px;
+  color:var(--accent);
+  font-family:'JetBrains Mono','Courier New',monospace;
+  line-height:1.9;
+}
+
+/* 체크리스트 */
+.checklist { list-style:none; }
+.checklist li {
+  display:flex;
+  align-items:center;
+  gap:8px;
+  padding:6px 0;
+  font-size:12px;
+  color:var(--text2);
+  border-bottom:1px solid var(--border);
+}
+.checklist li:last-child { border:none; }
+.checklist li .check { font-size:14px; }
+.checklist li.done { color:var(--accent2); }
+.checklist li.pending { color:var(--text3); }
+
+/* 빈 상태 */
+.empty-state {
+  text-align:center;
+  padding:24px 0;
+  color:var(--text3);
+  font-size:12px;
+}
+.empty-state .empty-icon { font-size:28px; margin-bottom:8px; }
+
+/* 스크롤바 */
+::-webkit-scrollbar { width:4px; }
+::-webkit-scrollbar-track { background:transparent; }
+::-webkit-scrollbar-thumb { background:var(--border); border-radius:2px; }
+</style>
+</head>
+<body>
+
+<div id="header">
+  <div class="logo">
+    <div class="logo-icon">🌿</div>
+    <div>
+      <div style="font-size:14px;font-weight:700;">조경 GIS 분석 시스템</div>
+      <div style="font-size:10px;color:var(--text2);">Landscape Architecture GIS Platform</div>
+    </div>
+  </div>
+  <div style="display:flex;align-items:center;gap:8px;">
+    <div class="status-dot"></div>
+    <span style="font-size:11px;color:var(--text2);">VWORLD 연동</span>
+  </div>
+</div>
+
+<div id="main">
+  <div id="map"></div>
+  <div id="panel">
+    <div class="tabs">
+      <div class="tab active" onclick="showTab('info',this)">📋 대상지</div>
+      <div class="tab" onclick="showTab('layer',this)">🗺 레이어</div>
+      <div class="tab" onclick="showTab('analysis',this)">📊 분석</div>
+      <div class="tab" onclick="showTab('result',this)">📄 결과</div>
+    </div>
+
+    <!-- 대상지 탭 -->
+    <div class="tab-content active" id="tab-info">
+      <div class="card">
+        <div class="card-label">대상지 면적</div>
+        <div class="card-value">92,287<span class="card-unit">m²</span></div>
+        <div class="card-sub">≈ 9.23 ha</div>
+      </div>
+      <div class="card">
+        <div class="card-label">위치</div>
+        <div class="card-desc">충청북도 청주시 흥덕구<br>오송읍 연제리</div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+        <div class="card">
+          <div class="card-label">공원 유형</div>
+          <div style="font-size:15px;font-weight:700;color:var(--text);margin-top:2px;">근린공원</div>
+        </div>
+        <div class="card">
+          <div class="card-label">공원 번호</div>
+          <div style="font-size:15px;font-weight:700;color:var(--text);margin-top:2px;">4호</div>
+        </div>
+      </div>
+
+      <div class="sec-title">좌표 정보</div>
+      <div class="coord-box">
+        CRS: EPSG:5174 (Bessel 중부원점)<br>
+        위도: 36.631179°N<br>
+        경도: 127.323312°E<br>
+        꼭짓점: 270개
+      </div>
+
+      <div class="sec-title">분석 진행 상황</div>
+      <ul class="checklist">
+        <li class="done"><span class="check">✅</span> 경계 추출 완료</li>
+        <li class="done"><span class="check">✅</span> 좌표계 변환 완료</li>
+        <li class="done"><span class="check">✅</span> 위성지도 표시 완료</li>
+        <li class="pending" id="chk-land"><span class="check">⬜</span> 토지조서</li>
+        <li class="pending" id="chk-landuse"><span class="check">⬜</span> 용도지역 분석</li>
+        <li class="pending" id="chk-water"><span class="check">⬜</span> 수계 분석</li>
+        <li class="pending" id="chk-park"><span class="check">⬜</span> 공원 반경 분석</li>
+        <li class="pending" id="chk-elev"><span class="check">⬜</span> 표고 분석</li>
+        <li class="pending" id="chk-slope"><span class="check">⬜</span> 경사도 분석</li>
+        <li class="pending" id="chk-veg"><span class="check">⬜</span> 식생 분석</li>
+      </ul>
+    </div>
+
+    <!-- 레이어 탭 -->
+    <div class="tab-content" id="tab-layer">
+      <div class="sec-title">배경지도</div>
+      <button class="layer-btn active" id="btn-satellite" onclick="setLayer('satellite',this)">
+        <span class="dot"></span> ESRI 위성사진
+      </button>
+      <button class="layer-btn" id="btn-google" onclick="setLayer('google',this)">
+        <span class="dot"></span> Google 위성
+      </button>
+      <button class="layer-btn" id="btn-osm" onclick="setLayer('osm',this)">
+        <span class="dot"></span> 일반 지도 (OSM)
+      </button>
+
+      <div class="sec-title">VWORLD 공간정보</div>
+      <button class="layer-btn" id="btn-cadastral" onclick="toggleWMS('cadastral','lp_pa_cbnd_bubun',this)">
+        <span class="dot"></span> 연속지적도
+      </button>
+      <button class="layer-btn" id="btn-landuse" onclick="toggleWMS('landuse','lt_c_uq111',this)">
+        <span class="dot"></span> 용도지역도
+      </button>
+      <button class="layer-btn" id="btn-water" onclick="toggleWMS('water','lt_c_wkmstrm',this)">
+        <span class="dot"></span> 하천망도
+      </button>
+      <button class="layer-btn" id="btn-park" onclick="toggleWMS('park','lt_c_wgisnpgug',this)">
+        <span class="dot"></span> 도시공원
+      </button>
+      <button class="layer-btn" id="btn-veg" onclick="toggleWMS('veg','lt_c_fsdifrsts',this)">
+        <span class="dot"></span> 토지피복도
+      </button>
+    </div>
+
+    <!-- 분석 탭 -->
+    <div class="tab-content" id="tab-analysis">
+      <button class="analysis-btn" id="abtn-land" onclick="runAnalysis('land')">
+        <span class="btn-icon">📋</span>
+        <span class="btn-text">토지조서<br><small style="color:var(--text3);font-weight:400;">지번·지목·공부상면적·편입면적</small></span>
+        <span class="btn-badge" id="badge-land">대기</span>
+      </button>
+      <button class="analysis-btn" id="abtn-landuse" onclick="runAnalysis('landuse')">
+        <span class="btn-icon">🟩</span>
+        <span class="btn-text">용도지역 분석<br><small style="color:var(--text3);font-weight:400;">지역별 면적 비율 산출</small></span>
+        <span class="btn-badge" id="badge-landuse">대기</span>
+      </button>
+      <button class="analysis-btn" id="abtn-park" onclick="runAnalysis('park')">
+        <span class="btn-icon">🌳</span>
+        <span class="btn-text">공원 반경 분석<br><small style="color:var(--text3);font-weight:400;">250m·500m 서비스권역</small></span>
+        <span class="btn-badge" id="badge-park">대기</span>
+      </button>
+      <button class="analysis-btn" id="abtn-water" onclick="runAnalysis('water')">
+        <span class="btn-icon">💧</span>
+        <span class="btn-text">수계 분석<br><small style="color:var(--text3);font-weight:400;">인근 하천 현황</small></span>
+        <span class="btn-badge" id="badge-water">대기</span>
+      </button>
+      <button class="analysis-btn" id="abtn-elev" onclick="runAnalysis('elev')">
+        <span class="btn-icon">⛰️</span>
+        <span class="btn-text">표고 분석<br><small style="color:var(--text3);font-weight:400;">DEM 기반 고도 분석</small></span>
+        <span class="btn-badge" id="badge-elev">대기</span>
+      </button>
+      <button class="analysis-btn" id="abtn-slope" onclick="runAnalysis('slope')">
+        <span class="btn-icon">📐</span>
+        <span class="btn-text">경사도 분석<br><small style="color:var(--text3);font-weight:400;">경사 구간별 면적 산출</small></span>
+        <span class="btn-badge" id="badge-slope">대기</span>
+      </button>
+      <button class="analysis-btn" id="abtn-veg" onclick="runAnalysis('veg')">
+        <span class="btn-icon">🌿</span>
+        <span class="btn-text">식생 분석<br><small style="color:var(--text3);font-weight:400;">토지피복 현황</small></span>
+        <span class="btn-badge" id="badge-veg">대기</span>
+      </button>
+    </div>
+
+    <!-- 결과 탭 -->
+    <div class="tab-content" id="tab-result">
+      <div id="result-content">
+        <div class="empty-state">
+          <div class="empty-icon">📊</div>
+          분석 탭에서 항목을 실행하면<br>결과가 여기에 표시됩니다
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+var API_KEY = "B7226779-4CC9-3103-8E18-88FA10F1A649";
+var DOMAIN = "jhj-landscape.github.io";
+var clat = 36.631179, clon = 127.323312;
+
+var SITE_COORDS = [[36.629331350569274,127.32523357270021],[36.626474338655264,127.32421081476137],[36.62647303300451,127.3242103480105],[36.62647172708648,127.32420988242377],[36.626470420901676,127.32420941800136],[36.62646911445063,127.32420895474345],[36.6264678077338,127.3242084926502],[36.62646650075175,127.3242080317218],[36.62646519350495,127.32420757195842],[36.62646388599392,127.3242071133602],[36.62646257821915,127.32420665592738],[36.62646127018116,127.32420619966007],[36.626459961880464,127.32420574455847],[36.62645865331755,127.32420529062273],[36.626457344492934,127.32420483785309],[36.626456035407124,127.32420438624966],[36.62645472606064,127.32420393581262],[36.62645341645397,127.32420348654212],[36.62645210658761,127.32420303843843],[36.62645079646207,127.32420259150165],[36.626449486077895,127.32420214573195],[36.626448175435556,127.32420170112951],[36.62644686453555,127.32420125769454],[36.62644555337842,127.32420081542713],[36.626444241964634,127.32420037432753],[36.626442930294736,127.32419993439593],[36.626441618369206,127.32419949563246],[36.62644030618856,127.32419905803727],[36.6264389937533,127.32419862161056],[36.62643768106392,127.32419818635252],[36.62643636812097,127.32419775226332],[36.62643505492491,127.32419731934309],[36.62643374147626,127.32419688759207],[36.62643242777554,127.32419645701036],[36.62650748545156,127.32387020649846],[36.62652936151122,127.32387800915942],[36.62666142911076,127.32392529125728],[36.62681195206166,127.3239791347698],[36.62701712049971,127.32405254754316],[36.62725847932146,127.32413885676094],[36.627334010472595,127.3241660036349],[36.627506409871046,127.3242275417314],[36.627536923554786,127.32424030240962],[36.62764252446106,127.32427774872772],[36.627788547083384,127.3243295624368],[36.62792016875643,127.32437505541247],[36.628209423740024,127.32447744231558],[36.62852325458037,127.32458898852776],[36.62904469683464,127.32477004940745],[36.62927309532081,127.32485027166236],[36.62947691629323,127.324921894643],[36.62990904540663,127.32507374121441],[36.6302167573909,127.32518180081875],[36.63031200572063,127.32521529328669],[36.63046496129215,127.32526904027041],[36.6306706724844,127.32534134421891],[36.63076909896049,127.32483505487816],[36.630815524178324,127.32459620915893],[36.63089464502604,127.32459553319885],[36.631133270036926,127.32459317516695],[36.631139207943775,127.32456345962885],[36.63135376869747,127.32449615354291],[36.631420018917055,127.3244565152301],[36.631487659092855,127.32443600151606],[36.63165097429975,127.32442460785273],[36.63170861054949,127.32440461134628],[36.63188092430991,127.32443115763773],[36.631886415671296,127.32443319307315],[36.63192844216996,127.32438741580373],[36.632068150135254,127.3244416660571],[36.63212223936618,127.32436720457298],[36.632181823699746,127.32426011818862],[36.63221009283859,127.32417000760218],[36.63227558367738,127.32401140235963],[36.63227097515721,127.32391623508089],[36.632268671624885,127.32386837193027],[36.63230756790721,127.32378042969276],[36.63221216618885,127.32370355624037],[36.63210205746261,127.32363355380765],[36.63202444397333,127.32357665641207],[36.631992189106846,127.32357462146558],[36.63187496298173,127.32350403077122],[36.63172887649294,127.32340905821431],[36.63147987130492,127.3232843648477],[36.63133943872538,127.32319791395324],[36.63132792343831,127.3231908223113],[36.63123693424701,127.32314829330808],[36.63111644903796,127.3230831688946],[36.63100478689845,127.32302098828141],[36.63098752143502,127.32307435959757],[36.63095404934535,127.32305588442901],[36.63080738408931,127.32297488711384],[36.63068627251528,127.32290808365912],[36.63048643705019,127.32276157216555],[36.63048993184947,127.32270199471093],[36.63052375858676,127.32248858782046],[36.63054960945412,127.32232557169284],[36.63057565827837,127.32228979028548],[36.63062278108769,127.32222513869411],[36.63070208639842,127.32175387335491],[36.63071952845734,127.32173516226216],[36.6307423030337,127.32171054754889],[36.630870801255725,127.32167798478477],[36.6308910001145,127.32167292529518],[36.63091146960878,127.3216677551171],[36.63117207288633,127.32160174967298],[36.63144932581681,127.32134227611584],[36.631508356702554,127.32103740072469],[36.63154865323535,127.3208297191087],[36.63155468361304,127.32079877363111],[36.63156564922279,127.320742021237],[36.63152784756109,127.32069132886134],[36.63137304939315,127.32048362558426],[36.631196701199364,127.32024698847594],[36.63108616891464,127.32009872616786],[36.63106309239649,127.32006788462452],[36.63089922468723,127.31984784794473],[36.630884678553876,127.31982833397784],[36.63063999748061,127.31950018612076],[36.63042216381716,127.3192078162367],[36.63017353037216,127.31887428949139],[36.63016610850707,127.3188643360747],[36.630166108504596,127.31886433607535],[36.63074328993113,127.31821542805153],[36.63075140241912,127.31824549484105],[36.630759818270434,127.31827541235326],[36.63076853594729,127.318305177258],[36.63077755391193,127.318334786225],[36.63078687062666,127.31836423592397],[36.63079648455371,127.31839352302471],[36.63080639415535,127.31842264419694],[36.630816597893876,127.31845159611035],[36.63082709423153,127.3184803754347],[36.63083788163058,127.31850897883972],[36.630848958553365,127.31853740299509],[36.63086032346209,127.3185656445705],[36.63087197481909,127.31859370023568],[36.6308839110866,127.31862156666025],[36.63089613072697,127.31864924051389],[36.63090863220241,127.3186767184663],[36.63092141397527,127.31870399718716],[36.630934474507846,127.31873107334602],[36.63094781226242,127.3187579436126],[36.630961425701244,127.31878460465651],[36.63097531328668,127.31881105314737],[36.630989473481,127.31883728575475],[36.63100390474652,127.31886329914829],[36.63101860554552,127.31888908999761],[36.631033574340314,127.3189146549722],[36.63104880959323,127.31893999074174],[36.631064309766565,127.31896509397575],[36.63108007332262,127.31898996134376],[36.63109609872372,127.31901458951539],[36.631112384432164,127.31903897516011],[36.63112892891027,127.31906311494744],[36.631145730620375,127.31908700554693],[36.631809781814674,127.3199969618986],[36.631819742269315,127.32001050436254],[36.63182978533361,127.32002394684805],[36.63183991049705,127.32003728881048],[36.63185011724911,127.32005052970509],[36.63186040507927,127.3200636689872],[36.63187077347702,127.32007670611213],[36.63188122193184,127.3200896405352],[36.63189174993325,127.32010247171166],[36.631902356970706,127.32011519909686],[36.631913042533675,127.32012782214609],[36.6319238061117,127.32014034031465],[36.63193464719422,127.32015275305785],[36.63194556527075,127.32016505983097],[36.63195655983075,127.32017726008934],[36.63196763036372,127.3201893532882],[36.63197877635916,127.32020133888285],[36.63198999730655,127.32021321632863],[36.63200129269535,127.32022498508086],[36.632012662015065,127.3202366445947],[36.63202410475519,127.32024819432559],[36.6320356204052,127.3202596337287],[36.63204720845458,127.32027096225936],[36.632058868392825,127.3202821793729],[36.6320705997094,127.32029328452454],[36.632082401893825,127.32030427716957],[36.63209427443555,127.3203151567633],[36.63210621682407,127.32032592276103],[36.63211822854888,127.32033657461797],[36.63213030909947,127.32034711178945],[36.63214245796531,127.32035753373074],[36.63215467463587,127.32036783989709],[36.63216695860066,127.32037802974382],[36.631536871299865,127.32210920854654],[36.6315314658686,127.32212456771059],[36.631526382938354,127.32214005217878],[36.63152162268701,127.32215565438185],[36.63151718529244,127.32217136675052],[36.631513070932485,127.32218718171562],[36.631509279785,127.32220309170792],[36.63150581202788,127.32221908915814],[36.63150266783901,127.32223516649715],[36.63149984739624,127.32225131615573],[36.63149735087745,127.32226753056463],[36.63149517846058,127.32228380215466],[36.631493330323465,127.3223001233566],[36.63149180664402,127.32231648660124],[36.63149060760014,127.32233288431944],[36.63148973336975,127.32234930894201],[36.63148918413073,127.32236575289964],[36.63148896006099,127.32238220862324],[36.63148906133846,127.3223986685436],[36.631489488141064,127.3224151250915],[36.63149024064671,127.32243157069776],[36.63149131903335,127.32244799779318],[36.63149272347888,127.32246439880855],[36.631494454161256,127.3224807661747],[36.63149651125841,127.32249709232244],[36.63149889494831,127.3225133696826],[36.63150160540888,127.32252959068586],[36.631504642818065,127.32254574776312],[36.631508007353865,127.32256183334516],[36.631511699194185,127.32257783986277],[36.631515718517015,127.32259375974672],[36.63152006550033,127.32260958542781],[36.631524740322114,127.3226253093368],[36.63152972988679,127.32264088363328],[36.63153501817445,127.32265626186694],[36.63154060097648,127.32267143855368],[36.63154647408426,127.32268640820936],[36.63155263328923,127.32270116534995],[36.63155907438272,127.32271570449133],[36.63156579315619,127.32273002014932],[36.63157278540099,127.32274410683988],[36.63158004690855,127.32275795907876],[36.631587573470256,127.3227715713819],[36.631595360877526,127.32278493826512],[36.63160340492175,127.32279805424422],[36.631611701394334,127.32281091383503],[36.63162024608669,127.32282351155341],[36.63162903479021,127.32283584191507],[36.63163806329632,127.32284789943589],[36.631647327396415,127.32285967863154],[36.63165682288188,127.32287117401789],[36.631666545544164,127.32288238011066],[36.63167649117466,127.32289329142559],[36.63168665556476,127.32290390247842],[36.6316970345059,127.32291420778489],[36.63170762378946,127.3229242018607],[36.63171841920685,127.32293387922155],[36.631729416549476,127.32294323438319],[36.63174061160876,127.32295226186126],[36.63175200017607,127.32296095617144],[36.63176357804284,127.3229693118294],[36.63177534100047,127.32297732335083],[36.631787284840335,127.32298498525128],[36.63179940535386,127.3229922920465],[36.63181169833243,127.32299923825201],[36.63332884767514,127.3238283306819],[36.63280096920918,127.32531536048289],[36.632714681364824,127.32555842581631],[36.632617293058566,127.32574954734379],[36.6324445438055,127.32623615786774],[36.63232140423398,127.32630532820619],[36.631266050913496,127.32592620541968],[36.63127104745283,127.32590472089964],[36.631263496664324,127.32522709109554],[36.63098151417873,127.32512614038713],[36.63083162052676,127.32577067390265],[36.62985528720934,127.32542114110203],[36.62975888577318,127.3253517200617],[36.62949468942678,127.32525713827371],[36.629331350569274,127.32523357270021]];
+
+// 지도 초기화
+var bgLayers = {
+  satellite: L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{attribution:'ESRI',maxZoom:19}),
+  google:    L.tileLayer('https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}',{attribution:'Google',maxZoom:20}),
+  osm:       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'OSM',maxZoom:19})
+};
+var map = L.map('map',{center:[clat,clon],zoom:17,layers:[bgLayers.satellite]});
+var currentBgLayer = bgLayers.satellite;
+
+// 대상지 경계
+var sitePolygon = L.polygon(SITE_COORDS,{
+  color:'#f78166',weight:2.5,
+  fillColor:'#e3b341',fillOpacity:0.15
+}).addTo(map);
+sitePolygon.bindPopup('<b>오송 4호 근린공원</b><br>면적: 92,287 m²');
+
+// 마커
+var myIcon = L.divIcon({
+  html:'<div style="background:#58a6ff;color:#fff;padding:4px 10px;border-radius:4px;font-size:11px;font-family:Pretendard,sans-serif;font-weight:600;white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,0.5);">📍 오송 4호 근린공원</div>',
+  iconAnchor:[70,10],
+  className:''
+});
+L.marker([clat,clon],{icon:myIcon}).addTo(map);
+
+// 탭 전환
+function showTab(name,el){
+  document.querySelectorAll('.tab-content').forEach(e=>e.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(e=>e.classList.remove('active'));
+  document.getElementById('tab-'+name).classList.add('active');
+  el.classList.add('active');
+}
+
+// 배경지도 전환
+function setLayer(type,el){
+  map.removeLayer(currentBgLayer);
+  currentBgLayer=bgLayers[type];
+  map.addLayer(currentBgLayer);
+  currentBgLayer.bringToBack();
+  document.querySelectorAll('.tab-content#tab-layer .layer-btn').forEach(b=>{
+    b.classList.remove('active');
+    b.querySelector('.dot').style.background='var(--border)';
+    b.querySelector('.dot').style.boxShadow='none';
+  });
+  el.classList.add('active');
+}
+
+// VWORLD WMS 레이어
+var wmsLayers={}, wmsOn={};
+function toggleWMS(key,layerName,el){
+  if(!wmsLayers[key]){
+    wmsLayers[key]=L.tileLayer.wms(
+      'https://api.vworld.kr/req/wms?key='+API_KEY+'&domain='+DOMAIN,{
+      layers:layerName,
+      styles:layerName,
+      format:'image/png',
+      transparent:true,
+      version:'1.3.0',
+      crs:L.CRS.EPSG4326,
+      opacity:0.8,
+      attribution:'VWORLD'
+    });
+    wmsOn[key]=false;
+  }
+  if(wmsOn[key]){
+    map.removeLayer(wmsLayers[key]);
+    el.classList.remove('active');
+    wmsOn[key]=false;
+  }else{
+    wmsLayers[key].addTo(map);
+    el.classList.add('active');
+    wmsOn[key]=true;
+  }
+}
+
+// 분석 실행
+var results = {};
+function runAnalysis(type){
+  var btn = document.getElementById('abtn-'+type);
+  var badge = document.getElementById('badge-'+type);
+  btn.classList.add('loading');
+  badge.textContent='분석중...';
+
+  if(type==='land') fetchLand(btn,badge);
+  else if(type==='landuse') fetchLanduse(btn,badge);
+  else if(type==='park') analysisPark(btn,badge);
+  else if(type==='water') fetchWater(btn,badge);
+  else if(type==='elev'||type==='slope'||type==='veg') {
+    setTimeout(()=>{
+      btn.classList.remove('loading');
+      btn.classList.add('done');
+      badge.textContent='준비중';
+      showResultTab();
+      showResult(type,'<div class="empty-state"><div class="empty-icon">🔧</div>VWORLD DEM/식생 API 연동<br>준비 중입니다</div>');
+    },800);
+  }
+}
+
+// 결과 탭으로 이동 + 표시
+function showResultTab(){
+  document.querySelectorAll('.tab-content').forEach(e=>e.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(e=>e.classList.remove('active'));
+  document.getElementById('tab-result').classList.add('active');
+  document.querySelectorAll('.tab')[3].classList.add('active');
+}
+
+function showResult(type, html){
+  var titles={land:'📋 토지조서',landuse:'🟩 용도지역 분석',park:'🌳 공원 반경 분석',water:'💧 수계 분석',elev:'⛰️ 표고 분석',slope:'📐 경사도 분석',veg:'🌿 식생 분석'};
+  results[type]=html;
+  var content='';
+  for(var k in results){
+    content+='<div style="margin-bottom:16px;"><div class="sec-title">'+titles[k]+'</div><div class="result-box">'+results[k]+'</div></div>';
+  }
+  document.getElementById('result-content').innerHTML=content;
+}
+
+function checkDone(type){
+  var chk=document.getElementById('chk-'+type);
+  if(chk){chk.className='done';chk.innerHTML='<span class="check">✅</span> '+chk.textContent.trim();}
+}
+
+// 토지조서
+function fetchLand(btn,badge){
+  var bounds=sitePolygon.getBounds();
+  var box=bounds.getWest().toFixed(6)+','+bounds.getSouth().toFixed(6)+','+bounds.getEast().toFixed(6)+','+bounds.getNorth().toFixed(6);
+  var cb='cb'+Date.now();
+  var url='https://api.vworld.kr/req/data?service=data&version=2.0&request=GetFeature&data=LP_PA_CBND_BUBUN'
+    +'&key='+API_KEY+'&domain='+DOMAIN
+    +'&size=1000&page=1&geometry=true&attribute=true&crs=EPSG:4326'
+    +'&geomFilter=BOX('+box+')&callback='+cb;
+
+  window[cb]=function(data){
+    document.head.querySelector('[data-cb="'+cb+'"]')?.remove();
+    delete window[cb];
+    try{
+      var features=data.response.result.featureCollection.features;
+      var sitePoly=turf.polygon([SITE_COORDS.map(c=>[c[1],c[0]])]);
+      var parcels=[];
+      features.forEach(function(f){
+        try{
+          var p;
+          if(f.geometry.type==='Polygon') p=turf.polygon(f.geometry.coordinates);
+          else if(f.geometry.type==='MultiPolygon') p=turf.multiPolygon(f.geometry.coordinates);
+          else return;
+          var inter=turf.intersect(sitePoly,p);
+          if(inter){
+            var area=turf.area(inter);
+            var pr=f.properties;
+            parcels.push({pnu:pr.pnu,jibun:pr.jibun||'-',inc:area,geom:f});
+          }
+        }catch(e){}
+      });
+
+      if(!parcels.length){
+        showResult('land','<div class="empty-state">필지를 찾지 못했습니다</div>');
+        btn.classList.remove('loading');badge.textContent='0필지';return;
+      }
+
+      var rows=[],done=0;
+      parcels.forEach(function(parcel,idx){
+        var cb2='cb2x'+Date.now()+'n'+idx;
+        var url2='https://api.vworld.kr/ned/data/ladfrlList?key='+API_KEY
+          +'&domain='+DOMAIN+'&pnu='+parcel.pnu
+          +'&format=json&numOfRows=1&pageNo=1&callback='+cb2;
+
+        window[cb2]=function(res){
+          document.head.querySelector('[data-vw="'+cb2+'"]')?.remove();
+          delete window[cb2];
+          var info=(res&&res.ladfrlVOList&&res.ladfrlVOList.ladfrlVOList&&res.ladfrlVOList.ladfrlVOList[0])||{};
+          rows[idx]={
+            no:idx+1,
+            jibun:parcel.jibun||info.mnnmSlno||'-',
+            jimok:info.lndcgrCodeNm||'-',
+            pub:info.lndpclAr||'-',
+            inc:parcel.inc.toFixed(1)
+          };
+          L.geoJSON(parcel.geom,{style:{color:'#58a6ff',weight:1.5,fillColor:'#58a6ff',fillOpacity:0.15}})
+            .addTo(map).bindPopup(
+              '지번: '+parcel.jibun+'<br>지목: '+(info.lndcgrCodeNm||'-')+'<br>'+
+              '공부상면적: '+(info.lndpclAr||'-')+'㎡<br>편입면적: '+parcel.inc.toFixed(1)+'㎡');
+          done++;
+          if(done===parcels.length) renderLandTable(rows,btn,badge);
+        };
+        var s2=document.createElement('script');
+        s2.setAttribute('data-vw',cb2);
+        s2.onerror=function(){
+          done++;
+          rows[idx]={no:idx+1,jibun:parcel.jibun,jimok:'-',pub:'-',inc:parcel.inc.toFixed(1)};
+          if(done===parcels.length) renderLandTable(rows,btn,badge);
+        };
+        s2.src=url2;document.head.appendChild(s2);
+      });
+    }catch(e){
+      badge.textContent='오류';btn.classList.remove('loading');
+      showResult('land','<div class="empty-state">❌ '+e.message+'</div>');
+    }
+  };
+  var s=document.createElement('script');s.setAttribute('data-cb',cb);
+  s.onerror=function(){badge.textContent='오류';btn.classList.remove('loading');};
+  s.src=url;document.head.appendChild(s);
+}
+
+function renderLandTable(rows,btn,badge){
+  var valid=rows.filter(Boolean);
+  var tPub=valid.reduce((s,r)=>s+(parseFloat(r.pub)||0),0);
+  var tInc=valid.reduce((s,r)=>s+parseFloat(r.inc),0);
+  var h='<table><tr><th>NO</th><th>지번</th><th>지목</th><th>공부상면적(㎡)</th><th>편입면적(㎡)</th></tr>';
+  valid.forEach(r=>h+='<tr><td>'+r.no+'</td><td>'+r.jibun+'</td><td>'+r.jimok+'</td><td>'+r.pub+'</td><td>'+r.inc+'</td></tr>');
+  h+='<tr class="total-row"><td colspan="3">합 계</td><td>'+tPub.toFixed(1)+'</td><td>'+tInc.toFixed(1)+'</td></tr></table>';
+  showResult('land',h);
+  checkDone('land');
+  btn.classList.remove('loading');btn.classList.add('done');
+  badge.textContent=valid.length+'필지';
+  showResultTab();
+}
+
+
+function fetchLanduse(btn,badge){
+  var bounds=sitePolygon.getBounds();
+  var box=bounds.getWest().toFixed(6)+','+bounds.getSouth().toFixed(6)+','+bounds.getEast().toFixed(6)+','+bounds.getNorth().toFixed(6);
+  var cb='cb'+Date.now();
+  var url='https://api.vworld.kr/req/data?service=data&version=2.0&request=GetFeature&data=LT_C_UQ111'
+    +'&key='+API_KEY+'&domain='+DOMAIN
+    +'&size=100&page=1&geometry=true&attribute=true&crs=EPSG:4326'
+    +'&geomFilter=BOX('+box+')&callback='+cb;
+
+  window[cb]=function(data){
+    document.head.querySelector('[data-cb="'+cb+'"]')?.remove();
+    delete window[cb];
+    try{
+      var features=data.response.result.featureCollection.features;
+      var sitePoly=turf.polygon([SITE_COORDS.map(c=>[c[1],c[0]])]);
+      var rows=[];
+      var nameMap={};
+      features.forEach(function(f){
+        try{
+          var p;
+          if(f.geometry.type==='Polygon') p=turf.polygon(f.geometry.coordinates);
+          else if(f.geometry.type==='MultiPolygon') p=turf.multiPolygon(f.geometry.coordinates);
+          else return;
+          var inter=turf.intersect(sitePoly,p);
+          if(inter){
+            var area=turf.area(inter);
+            var pr=f.properties;
+            var nm=pr.uname||'-';
+            if(nameMap[nm]) nameMap[nm]+=area;
+            else nameMap[nm]=area;
+          }
+        }catch(e){}
+      });
+      Object.keys(nameMap).forEach(function(nm){
+        rows.push({name:nm,area:nameMap[nm].toFixed(1),ratio:(nameMap[nm]/92287*100).toFixed(1)});
+      });
+      if(!rows.length){showResult('landuse','<div class="empty-state">용도지역 데이터를 찾지 못했습니다</div>');}
+      else{
+        var h='<table><tr><th>용도지역</th><th>면적(㎡)</th><th>비율(%)</th></tr>';
+        rows.forEach(r=>h+='<tr><td>'+r.name+'</td><td>'+r.area+'</td><td>'+r.ratio+'</td></tr>');
+        h+='</table>';
+        showResult('landuse',h);
+        checkDone('landuse');
+      }
+      btn.classList.remove('loading');btn.classList.add('done');
+      badge.textContent=rows.length+'개 지역';
+      showResultTab();
+    }catch(e){
+      badge.textContent='오류';btn.classList.remove('loading');
+      showResult('landuse','<div class="empty-state">❌ '+JSON.stringify(data?.response?.status||e.message)+'</div>');
+    }
+  };
+  var s=document.createElement('script');s.setAttribute('data-cb',cb);
+  s.onerror=function(){badge.textContent='오류';btn.classList.remove('loading');};
+  s.src=url;document.head.appendChild(s);
+}
+
+// 공원 반경
+function analysisPark(btn,badge){
+  // 기존 반경 레이어 제거
+  if(window._parkLayers){window._parkLayers.forEach(l=>map.removeLayer(l));window._parkLayers=[];}
+  window._parkLayers=[];
+  var colors={250:'#3fb950',500:'#58a6ff',1000:'#e3b341'};
+  var radii=[250,500,1000];
+  radii.forEach(function(r){
+    var circle=L.circle([clat,clon],{
+      radius:r,
+      color:colors[r],weight:1.5,
+      fillColor:colors[r],fillOpacity:0.05,
+      dashArray:'6,4'
+    }).addTo(map);
+    L.marker([clat+r/111000*0.7,clon],{
+      icon:L.divIcon({
+        html:'<div style="color:'+colors[r]+';font-size:10px;font-weight:600;font-family:Pretendard,sans-serif;white-space:nowrap;">'+r+'m 권역</div>',
+        className:'',iconAnchor:[20,0]
+      })
+    }).addTo(map);
+    window._parkLayers.push(circle);
+  });
+  map.setView([clat,clon],15);
+  var h='<table><tr><th>권역</th><th>반경</th><th>면적(㎡)</th></tr>';
+  h+='<tr><td>근린생활권</td><td>250m</td><td>'+Math.round(Math.PI*250*250).toLocaleString()+'</td></tr>';
+  h+='<tr><td>도보생활권</td><td>500m</td><td>'+Math.round(Math.PI*500*500).toLocaleString()+'</td></tr>';
+  h+='<tr><td>지역생활권</td><td>1,000m</td><td>'+Math.round(Math.PI*1000*1000).toLocaleString()+'</td></tr>';
+  h+='</table><div style="margin-top:8px;font-size:11px;color:var(--text2);">지도에서 반경별 서비스 권역 확인 가능</div>';
+  showResult('park',h);
+  checkDone('park');
+  btn.classList.remove('loading');btn.classList.add('done');
+  badge.textContent='완료';
+  showResultTab();
+}
+
+// 수계
+function fetchWater(btn,badge){
+  var bounds=sitePolygon.getBounds().pad(0.02);
+  var box=bounds.getWest().toFixed(6)+','+bounds.getSouth().toFixed(6)+','+bounds.getEast().toFixed(6)+','+bounds.getNorth().toFixed(6);
+  var cb='cb'+Date.now();
+  var url='https://api.vworld.kr/req/data?service=data&version=2.0&request=GetFeature&data=NE_SEA_POLYLINE_UTM52N'
+    +'&key='+API_KEY+'&domain='+DOMAIN
+    +'&size=50&page=1&geometry=true&attribute=true&crs=EPSG:4326'
+    +'&geomFilter=BOX('+box+')&callback='+cb;
+
+  window[cb]=function(data){
+    document.head.querySelector('[data-cb="'+cb+'"]')?.remove();
+    delete window[cb];
+    try{
+      var features=data.response.result.featureCollection.features;
+      if(!features||!features.length){
+        showResult('water','<div class="empty-state">인근 하천 데이터가 없습니다</div>');
+      }else{
+        var h='<table><tr><th>하천명</th><th>구분</th></tr>';
+        features.forEach(f=>{
+          var pr=f.properties;
+          h+='<tr><td>'+(pr.river_nm||pr.han_nm||pr.name||pr.NAME||'-')+'</td><td>'+(pr.river_ord||pr.strm_ord||'-')+'</td></tr>';
+          L.geoJSON(f,{style:{color:'#58a6ff',weight:2}}).addTo(map);
+        });
+        h+='</table>';
+        showResult('water',h);
+        checkDone('water');
+      }
+      btn.classList.remove('loading');btn.classList.add('done');
+      badge.textContent=features.length+'건';
+      showResultTab();
+    }catch(e){
+      badge.textContent='오류';btn.classList.remove('loading');
+      showResult('water','<div class="empty-state">❌ '+JSON.stringify(data?.response?.status||e.message)+'</div>');
+    }
+  };
+  var s=document.createElement('script');s.setAttribute('data-cb',cb);
+  s.onerror=function(){badge.textContent='오류';btn.classList.remove('loading');};
+  s.src=url;document.head.appendChild(s);
+}
+</script>
+</body>
+</html>
